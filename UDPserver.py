@@ -22,7 +22,7 @@ while True:
             for i in range(0, len(file), max_size):
                 chunk = file[i:i + max_size]
                 response_msg = f'Downloading {math.floor((i + len(chunk)) * 100 / len(file))}%'
-                serialized_data = pickle.dumps({'ok': True, 'data': {'message': response_msg.encode(), 'stream': chunk}})
+                serialized_data = pickle.dumps({'ok': True, 'data': {'message': response_msg.encode(), 'acc': i, 'stream': chunk}})
                 serverSocket.sendto(serialized_data, clientAddress)
             response_msg = 'Transmition complete'
             serialized_data = pickle.dumps({'ok': False, 'data': {'message': response_msg.encode(), 'stream': None}})
