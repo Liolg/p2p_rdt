@@ -12,27 +12,36 @@ hostname = socket.gethostname()
 IPAddr = socket.gethostbyname(hostname)
 print('IP Address: ' + IPAddr)
 
-def not_sended(i, win_len):
-    for (indexs, lens, accs) in win_len:
-        if i == indexs:
+def check_acc(i, win_len):
+    for (indexs, lengs, accs) in win_len:
+        if i == indexs and accs:
+            return True
+        else:
             return False
-    return True
+    return False
 
 def key_window(tup):
     index, lenght, accnoleged = tup
     return index
 
+def in_win_len(i):
+    for (indexs, lengs, accs) in win_len:
+        if i == indexs:
+            return True
+    return False
+
 async def send(clientAddress, file):
     global acc, win_len, MAX_WINDOW_LEN, MAX_SIZE
     #await asyncio.sleep(0.2)
     for i in range(acc, min((acc + MAX_WINDOW_LEN), len(file)), MAX_SIZE):
-        if not_sended(i, win_len):
+        if check_acc(i, win_len) or len(win_len) < MAX_WINDOW_LEN:
             chunk = file[i:i + MAX_SIZE]
-            response_msg = f'Downloading {math.floor((i + len(chunk)) * 100 / len(file))}%'
+            response_msg = f'{math.floor((i + len(chunk)) * 100 / len(file))}%'
             serialized_data = pickle.dumps({'ok': True, 'data': {'message': response_msg.encode(), 'seq': i, 'stream': chunk}})
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.005)
             serverSocket.sendto(serialized_data, clientAddress)
-            win_len.append((i, len(chunk), False))
+            if not in_win_len(i):
+                win_len.append((i, len(chunk), False))
 
 async def main():
     global acc, win_len, MAX_WINDOW_LEN, MAX_SIZE
@@ -50,22 +59,23 @@ async def main():
                 while True:
                     try:
                         await send(clientAddress, file)
+                        print('waiting acc')
                         payload, clientAddress = serverSocket.recvfrom(2048)
-                        serverSocket.settimeout(5)
+                        serverSocket.settimeout(10)
                         recived_object = pickle.loads(payload)
                         command = recived_object['command']
                         data = recived_object['data']
                         if command == 'acc':
                             if data + 1 > len(file):
+                                response_msg = 'Transmition complete'
                                 break
 
                             for i in range(0, len(win_len)):
                                 index, lenght, is_acc = win_len[i]
-                                if data >= index:
+                                if data > index:
                                     win_len[i] = (index, lenght, True)
-                                    break
                             win_len.sort(key = key_window)
-                            while len(win_len) > 0 and list(win_len[0])[2]:
+                            while len(win_len) > 0 and win_len[0][2]:
                                 index, lenght, is_acc = win_len[0]
                                 acc = index + lenght
                                 win_len.pop(0)
@@ -73,24 +83,27 @@ async def main():
                         print('time up')
                         acc = 0
                         win_len = []
+                        response_msg = 'time up'
                         break
-
-                response_msg = 'Transmition complete'
-                serialized_data = pickle.dumps({'ok': False, 'data': {'message': response_msg.encode(), 'stream': None}})
-                #time.sleep(0.05)
-                serverSocket.sendto(serialized_data, clientAddress)
+                    
+                if response_msg != 'time up':
+                    serialized_data = pickle.dumps({'ok': False, 'data': {'message': response_msg.encode(), 'stream': None}})
+                    serverSocket.sendto(serialized_data, clientAddress)
             else:
                 response_msg = 'not found'
                 serialized_data = pickle.dumps({'ok': False, 'data': {'message': response_msg.encode(), 'stream': None}})
                 #time.sleep(0.05)
                 serverSocket.sendto(serialized_data, clientAddress)
-        
+        else:
+            response_msg = 'invalid command'
+            serialized_data = pickle.dumps({'ok': False, 'data': {'message': response_msg.encode(), 'stream': None}})
+            serverSocket.sendto(serialized_data, clientAddress)
         acc = 0
         win_len = []
 
 acc = 0
 acc_list = []
 MAX_SIZE = 2
-MAX_WINDOW_LEN = MAX_SIZE * 2
+MAX_WINDOW_LEN = MAX_SIZE * 5
 win_len = []
 asyncio.run(main())

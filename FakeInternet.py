@@ -17,11 +17,12 @@ i = 0
         
 
 async def send(payload, hostAddress, hostPort):
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.005)
     global i, last_programed, clientPort, serverPort
     
     rand_num = random.random() * 10
     if rand_num < 2:
+        print('network fail incoming: ', hostPort)
         return
     if hostPort == serverPort:
         print('send to client', pickle.loads(payload))

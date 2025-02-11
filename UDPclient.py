@@ -20,16 +20,21 @@ clientSocket.settimeout(5)
 new_file = pathlib.Path('resources/recived.txt').open( 'a+b')
 file_chunks_buffer = []
 acc = 0
+timeout_tries = 50
 
-async def send_acc(acc):
+def send_acc(acc):
     serialized_data = pickle.dumps({'command': 'acc', 'data': acc})
     clientSocket.sendto(serialized_data, (serverName, serverPort))
 
 def buffer_sort_key(el):
     return el['acc']
 
-async def send(response):
-    await asyncio.sleep(0.01)
+def in_buffer(acc):
+    for buf_tup in file_chunks_buffer:
+        if buf_tup['acc'] == acc:
+            return True
+
+async def proc_response(response):
     global acc, new_file
     data = response['data']
     # os.system('clear')
@@ -38,37 +43,42 @@ async def send(response):
     if acc == data['seq']:
         new_file.write(data['stream'])
         acc = data['seq'] + len(data['stream'])
-        if len(file_chunks_buffer) > 0:
-            file_chunks_buffer.sort(key = buffer_sort_key)
-            while acc == file_chunks_buffer[0]['acc']:    
-                new_file.write(file_chunks_buffer[0]['stream'])
-                acc = file_chunks_buffer[0]['acc'] + len(file_chunks_buffer[0]['stream'])
-                file_chunks_buffer.pop(0)
-            for i in range(0, len(file_chunks_buffer)):
-                if acc == i['acc']:
-                    new_file.write(i['stream'])
-                    acc = i['acc'] + len(i['stream'])
-        await send_acc(acc)
-    else:
-        file_chunks_buffer.append({'acc': acc, 'stream': data['stream']})
+        file_chunks_buffer.sort(key = buffer_sort_key)
+        while len(file_chunks_buffer) > 0 and acc == file_chunks_buffer[0]['acc']:    
+            new_file.write(file_chunks_buffer[0]['stream'])
+            acc = file_chunks_buffer[0]['acc'] + len(file_chunks_buffer[0]['stream'])
+            file_chunks_buffer.pop(0)
+        for i in range(0, len(file_chunks_buffer)):
+            if acc == file_chunks_buffer[i]['acc']:
+                new_file.write(i['stream'])
+                acc = i['acc'] + len(i['stream'])
+        await asyncio.sleep(0.005)
+        send_acc(acc)
+    elif data['seq'] > acc and not in_buffer(data['seq']):
+        file_chunks_buffer.append({'acc': data['seq'], 'stream': data['stream']})
         #await send_acc(acc)
 
 async def main():
-    global new_file
+    global new_file, acc, timeout_tries
     while True:
         try:
+            clientSocket.settimeout(0.2)
             serialized_response, serverAddress = clientSocket.recvfrom(2048)
-            clientSocket.settimeout(5)
+            clientSocket.settimeout(None)
             response = pickle.loads(serialized_response)
             if response['ok']:
-                await send(response)
+                await proc_response(response)
             else:
                 data = response['data']
                 print(data['message'].decode())
-                print(file_chunks_buffer)
                 break
         except TimeoutError:
-            print('time up')
+            timeout_tries -= 1
+            print('time up', timeout_tries)
+
+            if timeout_tries > 0:
+                send_acc(acc)
+                continue
             break
         # except:
         #     print('error')
